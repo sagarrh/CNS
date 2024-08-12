@@ -1,112 +1,86 @@
-def to_lower_case(s):
-    return s.lower()
+import string
 
-def remove_spaces(s):
-    return ''.join(s.split())
-
-def generate_key_table(key):
-    key = key.lower()
-    key = remove_spaces(key)
-    key = key.replace('j', 'i')
-
-    key_table = []
-    used_chars = set()
-
+def generate_playfair_matrix(key):
+    chars = string.ascii_uppercase + string.digits
+    matrix = []
+    used = set()
     
+    key = ''.join(filter(str.isalnum, key)).upper()
     for char in key:
-        if char not in used_chars and (char.isalpha() or char.isdigit()):
-            used_chars.add(char)
-            key_table.append(char)
+        if char not in used and char in chars:
+            used.add(char)
+            matrix.append(char)
+    
+    for char in chars:
+        if char not in used:
+            used.add(char)
+            matrix.append(char)
+    
+    return [matrix[i:i+6] for i in range(0, 36, 6)]
 
-    for char in 'abcdefghijklmnopqrstuvwxyz0123456789':
-        if char not in used_chars and char != 'j':
-            used_chars.add(char)
-            key_table.append(char)
+def find_position(matrix, char):
+    for r, row in enumerate(matrix):
+        if char in row:
+            return r, row.index(char)
+    return None
 
-    key_table = [key_table[i:i + 6] for i in range(0, 36, 6)] 
-    return key_table
+def preprocess_text(text):
+    text = ''.join(filter(str.isalnum, text)).upper()
+    processed = []
+    i = 0
+    while i < len(text):
+        processed.append(text[i])
+        if i + 1 < len(text) and text[i] == text[i + 1]:
+            processed.append('X')
+        i += 1
+    if len(processed) % 2 != 0:
+        processed.append('X')
+    return [processed[i:i+2] for i in range(0, len(processed), 2)]
 
-def prepare(plain):
-    if len(plain) % 2 != 0:
-        plain += 'x'
-    return plain
+def encrypt_digraph(matrix, digraph):
+    r1, c1 = find_position(matrix, digraph[0])
+    r2, c2 = find_position(matrix, digraph[1])
+    
+    if r1 == r2:
+        return matrix[r1][(c1 + 1) % 6] + matrix[r2][(c2 + 1) % 6]
+    elif c1 == c2:
+        return matrix[(r1 + 1) % 6][c1] + matrix[(r2 + 1) % 6][c2]
+    else:
+        return matrix[r1][c2] + matrix[r2][c1]
 
-def mod6(a):
-    return a % 6
+def decrypt_digraph(matrix, digraph):
+    r1, c1 = find_position(matrix, digraph[0])
+    r2, c2 = find_position(matrix, digraph[1])
+    
+    if r1 == r2:
+        return matrix[r1][(c1 - 1) % 6] + matrix[r2][(c2 - 1) % 6]
+    elif c1 == c2:
+        return matrix[(r1 - 1) % 6][c1] + matrix[(r2 - 1) % 6][c2]
+    else:
+        return matrix[r1][c2] + matrix[r2][c1]
 
-def search(key_table, a, b):
-    if a == 'j':
-        a = 'i'
-    if b == 'j':
-        b = 'i'
+def playfair_encrypt(key, text):
+    matrix = generate_playfair_matrix(key)
+    digraphs = preprocess_text(text)
+    encrypted_text = ''.join(encrypt_digraph(matrix, dg) for dg in digraphs)
+    return encrypted_text
 
-    pos = {}
-    for i, row in enumerate(key_table):
-        for j, char in enumerate(row):
-            pos[char] = (i, j)
+def playfair_decrypt(key, text):
+    matrix = generate_playfair_matrix(key)
+    digraphs = [text[i:i+2] for i in range(0, len(text), 2)]
+    decrypted_text = ''.join(decrypt_digraph(matrix, dg) for dg in digraphs)
+    
 
-    return pos[a], pos[b]
+    if decrypted_text.endswith('X'):
+        decrypted_text = decrypted_text[:-1]
+    return decrypted_text
 
-def encrypt(plain, key_table):
-    plain = prepare(plain)
-    encrypted_text = []
+key = input("Enter your key: ")
+text = input("Enter your text: ")
 
-    for i in range(0, len(plain), 2):
-        a, b = plain[i], plain[i + 1]
-        (r1, c1), (r2, c2) = search(key_table, a, b)
+encrypted_text = playfair_encrypt(key, text)
+print("Encrypted Text:", encrypted_text)
 
-        if r1 == r2:
-            encrypted_text.append(key_table[r1][mod6(c1 + 1)])
-            encrypted_text.append(key_table[r1][mod6(c1 + 2)])
-        elif c1 == c2:
-            encrypted_text.append(key_table[mod6(r1 + 1)][c1])
-            encrypted_text.append(key_table[mod6(r2 + 1)][c2])
-        else:
-            encrypted_text.append(key_table[r1][c2])
-            encrypted_text.append(key_table[r2][c1])
+decrypted_text = playfair_decrypt(key, encrypted_text)
+print("Decrypted Text:", decrypted_text.lower())
 
-    return ''.join(encrypted_text)
-
-def decrypt(cipher, key_table):
-    cipher = prepare(cipher)
-    decrypted_text = []
-
-    for i in range(0, len(cipher), 2):
-        a, b = cipher[i], cipher[i + 1]
-        (r1, c1), (r2, c2) = search(key_table, a, b)
-
-        if r1 == r2:
-            decrypted_text.append(key_table[r1][mod6(c1 - 1)])
-            decrypted_text.append(key_table[r1][mod6(c1 - 2)])
-        elif c1 == c2:
-            decrypted_text.append(key_table[mod6(r1 - 1)][c1])
-            decrypted_text.append(key_table[mod6(r2 - 1)][c2])
-        else:
-            decrypted_text.append(key_table[r1][c2])
-            decrypted_text.append(key_table[r2][c1])
-
-    return ''.join(decrypted_text).replace('x', '')  
-
-def encrypt_by_playfair_cipher(plaintext, key):
-    generated_table = generate_key_table(key)
-    plaintext = to_lower_case(plaintext)
-    plaintext = remove_spaces(plaintext)
-    return encrypt(plaintext, generated_table)
-
-def decrypt_by_playfair_cipher(ciphertext, key):
-    generated_table = generate_key_table(key)
-    ciphertext = to_lower_case(ciphertext)
-    ciphertext = remove_spaces(ciphertext)
-    return decrypt(ciphertext, generated_table)
-
-if __name__ == "__main__":
-    key = input("Enter the key: ")
-    plaintext = input("Enter plaintext: ")
-
-    ciphered_text = encrypt_by_playfair_cipher(plaintext, key)
-    decrypted_text = decrypt_by_playfair_cipher(ciphered_text, key)
-
-    print(f"Key is: {key}")
-    print(f"Plaintext is: {plaintext}")
-    print(f"Ciphered text is: {ciphered_text}")
-    print(f"Decrypted text is: {decrypted_text}")
