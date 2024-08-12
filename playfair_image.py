@@ -1,86 +1,147 @@
-import string
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
 
-def generate_playfair_matrix(key):
-    chars = string.ascii_uppercase + string.digits
-    matrix = []
-    used = set()
-    
-    key = ''.join(filter(str.isalnum, key)).upper()
+def generate_key_square(key):
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    key = key.upper().replace(" ", "") + alphabet
+    key_square = ""
     for char in key:
-        if char not in used and char in chars:
-            used.add(char)
-            matrix.append(char)
-    
-    for char in chars:
-        if char not in used:
-            used.add(char)
-            matrix.append(char)
-    
-    return [matrix[i:i+6] for i in range(0, 36, 6)]
+        if char not in key_square:
+            key_square += char
+    return np.array(list(key_square)).reshape(6, 6)
 
-def find_position(matrix, char):
-    for r, row in enumerate(matrix):
-        if char in row:
-            return r, row.index(char)
-    return None
+def find_position(key_square, char):
+    return np.where(key_square == char)
 
-def preprocess_text(text):
-    text = ''.join(filter(str.isalnum, text)).upper()
-    processed = []
+def encrypt_pair(key_square, a, b):
+    row_a, col_a = find_position(key_square, a)
+    row_b, col_b = find_position(key_square, b)
+    
+    if row_a == row_b:
+        return key_square[row_a, (col_a + 1) % 6][0], key_square[row_b, (col_b + 1) % 6][0]
+    elif col_a == col_b:
+        return key_square[(row_a + 1) % 6, col_a][0], key_square[(row_b + 1) % 6, col_b][0]
+    else:
+        return key_square[row_a, col_b][0], key_square[row_b, col_a][0]
+
+def decrypt_pair(key_square, a, b):
+    row_a, col_a = find_position(key_square, a)
+    row_b, col_b = find_position(key_square, b)
+    
+    if row_a == row_b:
+        return key_square[row_a, (col_a - 1) % 6][0], key_square[row_b, (col_b - 1) % 6][0]
+    elif col_a == col_b:
+        return key_square[(row_a - 1) % 6, col_a][0], key_square[(row_b - 1) % 6, col_b][0]
+    else:
+        return key_square[row_a, col_b][0], key_square[row_b, col_a][0]
+
+def playfair_encrypt(key, plaintext):
+    key_square = generate_key_square(key)
+    plaintext = plaintext.upper().replace(" ", "")
+    ciphertext = ""
+    
     i = 0
-    while i < len(text):
-        processed.append(text[i])
-        if i + 1 < len(text) and text[i] == text[i + 1]:
-            processed.append('X')
-        i += 1
-    if len(processed) % 2 != 0:
-        processed.append('X')
-    return [processed[i:i+2] for i in range(0, len(processed), 2)]
-
-def encrypt_digraph(matrix, digraph):
-    r1, c1 = find_position(matrix, digraph[0])
-    r2, c2 = find_position(matrix, digraph[1])
+    while i < len(plaintext):
+        if i == len(plaintext) - 1:
+            a, b = plaintext[i], 'X'
+        elif plaintext[i] == plaintext[i+1]:
+            a, b = plaintext[i], 'X'
+            i -= 1
+        else:
+            a, b = plaintext[i], plaintext[i+1]
+        
+        encrypted_pair = encrypt_pair(key_square, a, b)
+        ciphertext += ''.join(encrypted_pair)
+        i += 2
     
-    if r1 == r2:
-        return matrix[r1][(c1 + 1) % 6] + matrix[r2][(c2 + 1) % 6]
-    elif c1 == c2:
-        return matrix[(r1 + 1) % 6][c1] + matrix[(r2 + 1) % 6][c2]
-    else:
-        return matrix[r1][c2] + matrix[r2][c1]
+    return ciphertext
 
-def decrypt_digraph(matrix, digraph):
-    r1, c1 = find_position(matrix, digraph[0])
-    r2, c2 = find_position(matrix, digraph[1])
+def playfair_decrypt(key, ciphertext):
+    key_square = generate_key_square(key)
+    plaintext = ""
     
-    if r1 == r2:
-        return matrix[r1][(c1 - 1) % 6] + matrix[r2][(c2 - 1) % 6]
-    elif c1 == c2:
-        return matrix[(r1 - 1) % 6][c1] + matrix[(r2 - 1) % 6][c2]
-    else:
-        return matrix[r1][c2] + matrix[r2][c1]
-
-def playfair_encrypt(key, text):
-    matrix = generate_playfair_matrix(key)
-    digraphs = preprocess_text(text)
-    encrypted_text = ''.join(encrypt_digraph(matrix, dg) for dg in digraphs)
-    return encrypted_text
-
-def playfair_decrypt(key, text):
-    matrix = generate_playfair_matrix(key)
-    digraphs = [text[i:i+2] for i in range(0, len(text), 2)]
-    decrypted_text = ''.join(decrypt_digraph(matrix, dg) for dg in digraphs)
+    for i in range(0, len(ciphertext), 2):
+        a, b = ciphertext[i], ciphertext[i+1]
+        decrypted_pair = decrypt_pair(key_square, a, b)
+        plaintext += ''.join(decrypted_pair)
     
+    return plaintext.rstrip('X')
 
-    if decrypted_text.endswith('X'):
-        decrypted_text = decrypted_text[:-1]
-    return decrypted_text
+def encrypt_image(key_image_path, normal_image_path):
+    # Open the images
+    key_image = Image.open(key_image_path).convert('L')
+    normal_image = Image.open(normal_image_path).convert('L')
+    
+    # Ensure both images have the same size
+    if key_image.size != normal_image.size:
+        raise ValueError("Key image and normal image must have the same dimensions")
+    
+    # Convert images to numpy arrays for easier processing
+    key_array = np.array(key_image)
+    normal_array = np.array(normal_image)
+    
+    # XOR the key and normal arrays
+    encrypted_array = np.bitwise_xor(key_array, normal_array).astype(np.uint8)
+    
+    # Convert the encrypted array back to an image
+    encrypted_image = Image.fromarray(encrypted_array)
+    
+    # Display images fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(20, 5))
+    
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(20, 5))
+    ax1.imshow(normal_image, cmap='gray')
+    ax1.set_title('Original Image')
+    ax1.axis('off')
+    ax2.imshow(key_image, cmap='gray')
+    ax2.set_title('Key Image')
+    ax2.axis('off')
+    ax3.imshow(encrypted_image, cmap='gray')
+    ax3.set_title('Encrypted Image')
+    ax3.axis('off')
+    ax4.imshow(normal_image, cmap='gray')
+    ax4.set_title('Decrypted Image')
+    ax4.axis('off')
+    plt.tight_layout()
+    plt.show()
 
-key = input("Enter your key: ")
-text = input("Enter your text: ")
+def main():
+    while True:
+        print("\nPlayfair Cipher Encryption/Decryption")
+        print("1. Encrypt/Decrypt Text")
+        print("2. Encrypt Image")
+        print("3. Exit")
+        
+        choice = input("Enter your choice (1-3): ")
+        
+        if choice == '1':
+            key = input("Enter the key: ")
+            plaintext = input("Enter the text to encrypt: ")
+            ciphertext = playfair_encrypt(key, plaintext)
+            decrypted_text = playfair_decrypt(key, ciphertext)
+            print(f"\nKey: {key}")
+            print(f"Plaintext: {plaintext}")
+            print(f"Ciphertext: {ciphertext}")
+            print(f"Decrypted text: {decrypted_text}")
+        
+        elif choice == '2':
+            key_image_path = input("Enter the path to the key image: ")
+            normal_image_path = input("Enter the path to the normal image: ")
+            try:
+                encrypt_image(key_image_path, normal_image_path)
+            except FileNotFoundError:
+                print("Error: Image file not found. Please check the paths and try again.")
+            except ValueError as e:
+                print(f"Error: {str(e)}")
+            except Exception as e:
+                print(f"An error occurred: {str(e)}")
+        
+        elif choice == '3':
+            print("Exiting the program. Goodbye!")
+            break
+        
+        else:
+            print("Invalid choice. Please enter 1, 2, or 3.")
 
-encrypted_text = playfair_encrypt(key, text)
-print("Encrypted Text:", encrypted_text)
-
-decrypted_text = playfair_decrypt(key, encrypted_text)
-print("Decrypted Text:", decrypted_text)
-
+if __name__ == "__main__":
+    main()
